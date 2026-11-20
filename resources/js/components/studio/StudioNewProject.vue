@@ -23,20 +23,20 @@ import { store } from '@/routes/app/studio';
 
 const open = defineModel<boolean>('open', { required: true });
 const emit = defineEmits<{ created: [id: number, storyboard: boolean] }>();
-const form = useHttp<
-    {
-        title: string;
-        brief: string;
-        format: Format;
-        review_storyboard: boolean;
-    },
-    { project_id: number }
->({
+const initialProject: {
+    title: string;
+    brief: string;
+    format: Format;
+    review_storyboard: boolean;
+} = {
     title: '',
     brief: '',
     format: 'reel',
     review_storyboard: false,
-});
+};
+const form = useHttp<typeof initialProject, { project_id: number }>(
+    initialProject,
+);
 const error = ref('');
 const requestError = computed(
     () =>
@@ -58,7 +58,7 @@ const submit = async (): Promise<void> => {
         const result = await form.post(store.url());
         if (!result) return;
         open.value = false;
-        form.reset();
+        form.defaults(initialProject).reset();
         emit('created', result.project_id, storyboard);
     } catch {
         if (!Object.keys(form.errors).length)
