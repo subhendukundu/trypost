@@ -1,0 +1,9 @@
+# Studio production worker
+
+TryPost invokes `python3 scripts/studio/run.py INPUT_JSON OUTPUT_DIR` in its Studio queue. Use Python 3.11 or later, install `requirements.txt`, and install FFmpeg and ffprobe with H.264 and AAC encoding. Pillow must have RAQM enabled for Bengali text shaping. Run the offline acceptance test with `python3 -m unittest discover -s scripts/studio -v`.
+
+Configure the queue environment with your model and voice credentials. Native Codex and Claude need their CLI executable and an isolated authenticated profile through `STUDIO_CODEX_BINARY` and `STUDIO_CODEX_PROFILE`, or `STUDIO_CLAUDE_BINARY` and `STUDIO_CLAUDE_PROFILE`. API adapters use `STUDIO_OPENAI_API_KEY`, `STUDIO_ANTHROPIC_API_KEY`, `STUDIO_GEMINI_API_KEY`, and `STUDIO_XAI_API_KEY`. Narration uses `STUDIO_ELEVENLABS_API_KEY` and a workspace voice or `STUDIO_ELEVENLABS_VOICE_ID`. Set `STUDIO_<PROVIDER>_MODEL` to override a model. Set `STUDIO_FFMPEG_BINARY` or `STUDIO_FFPROBE_BINARY` if those tools need absolute paths.
+
+A Reel run writes two treatments concurrently, compares the scripts, and renders the chosen treatment through the illustrated scene library. The private result contains the cover, captions and editable source, with both treatments and the chosen social caption in the manifest. Timing falls back to estimates when provider alignment does not match the original text. The worker verifies decoding and the timeline. Creative and listening review happen in the Studio.
+
+A timestamped revision can change the selected shot’s visible action, camera, set, actor, expression or prop. It leaves the original speech, length, captions and unaffected shot files intact. The source archive includes its own offline rebuild instructions. Provider reservations and saved results stay private in the run directory so a lost response cannot trigger an automatic duplicate charge.

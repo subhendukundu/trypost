@@ -23,6 +23,10 @@ function mcpToolAnnotations(): array
 function mcpExpectedToolAnnotations(): array
 {
     return [
+        // Studio
+        'get-studio-project-tool' => [true, false, false],
+        'start-studio-run-tool' => [false, false, true],
+
         // Posts
         'list-posts-tool' => [true, false, false],
         'get-post-tool' => [true, false, false],

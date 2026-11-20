@@ -8,6 +8,7 @@ use App\Actions\Post\FinalizePostPublication;
 use App\Enums\GoogleBusiness\LocalPostState;
 use App\Enums\Media\Type as MediaType;
 use App\Enums\Post\PublishStatus;
+use App\Enums\Post\Status as PostStatus;
 use App\Enums\SocialAccount\Platform as SocialPlatform;
 use App\Enums\SocialAccount\Status;
 use App\Events\PostStatusUpdated;
@@ -32,6 +33,7 @@ use App\Services\Social\ThreadsPublisher;
 use App\Services\Social\TikTokPublisher;
 use App\Services\Social\XPublisher;
 use App\Services\Social\YouTubePublisher;
+use App\Studio\StudioRelease;
 use App\Support\Social\GoogleBusinessDerivativeCleaner;
 use App\Support\Social\LimitRetryPolicy;
 use App\Support\Social\PublishCheckpoint;
@@ -93,6 +95,14 @@ class PublishToSocialPlatform implements ShouldBeUnique, ShouldQueue
         $this->post->refresh();
 
         if ($this->post->publish_status->isClosed() || $this->post->isPublicationWaitingForLimitRetry()) {
+            return;
+        }
+
+        if (! StudioRelease::permits($this->post)) {
+            if ($this->post->status === PostStatus::Publishing && ! $this->post->scheduled_at?->isFuture()) {
+                $this->failAndFinalize(StudioRelease::APPROVAL_REQUIRED);
+            }
+
             return;
         }
 

@@ -113,6 +113,7 @@ return [
 
     'waits' => [
         'redis:default' => 60,
+        'studio:studio' => 120,
     ],
 
     /*
@@ -301,6 +302,16 @@ return [
             'nice' => 0,
         ],
 
+        'studio' => [
+            'connection' => 'studio',
+            'queue' => ['studio'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'timeout' => 1500,
+            'memory' => 256,
+            'tries' => 1,
+        ],
+
         'rss-feeds' => [
             'connection' => 'redis',
             'queue' => ['rss-feeds'],
@@ -319,6 +330,8 @@ return [
 
     'environments' => [
         'production' => [
+            'studio' => [],
+
             'supervisor-1' => [
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
@@ -363,6 +376,8 @@ return [
         ],
 
         'local' => [
+            'studio' => [],
+
             'supervisor-1' => [
                 'maxProcesses' => 3,
             ],

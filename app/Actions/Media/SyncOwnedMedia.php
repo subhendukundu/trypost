@@ -5,9 +5,11 @@ declare(strict_types=1);
 namespace App\Actions\Media;
 
 use App\Dto\MediaItem;
+use App\Enums\Post\Status as PostStatus;
 use App\Models\Idea;
 use App\Models\Media;
 use App\Models\Post;
+use App\Studio\StudioRelease;
 use App\Support\Media\MediaCopyBatch;
 use App\Support\ThreadReplies;
 use Illuminate\Database\Eloquent\Builder;
@@ -41,7 +43,7 @@ class SyncOwnedMedia
     /**
      * Row `meta` keys that only describe the row's history and stay off the item.
      */
-    private const array ROW_ONLY_META = ['copied_from'];
+    private const array ROW_ONLY_META = ['copied_from', StudioRelease::MEDIA_ORIGIN];
 
     /**
      * Item fields that describe where the composer found the file, not the file.
@@ -126,6 +128,19 @@ class SyncOwnedMedia
 
         DeleteOwnedMedia::forRows($owner->ownedMedia()->whereNotIn('id', $kept)->pluck('id')->all());
         $owner->update(self::attributes($locked, $final, $replies));
+
+        if ($owner instanceof Post && $kept !== []) {
+            $studioMedia = $owner->ownedMedia()->whereKey($kept)->whereNotNull('meta->'.StudioRelease::MEDIA_ORIGIN)->first(['meta']);
+            $revisionId = data_get($studioMedia?->meta, StudioRelease::MEDIA_ORIGIN);
+
+            if ($revisionId !== null) {
+                if ($owner->status !== PostStatus::Draft) {
+                    StudioRelease::requiresOwnerReview();
+                }
+
+                StudioRelease::record($owner, (int) $revisionId);
+            }
+        }
 
         return $final;
     }

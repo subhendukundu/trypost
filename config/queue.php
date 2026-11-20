@@ -75,6 +75,15 @@ return [
             'after_commit' => false,
         ],
 
+        'studio' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'studio',
+            'retry_after' => 1650,
+            'block_for' => null,
+            'after_commit' => true,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

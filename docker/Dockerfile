@@ -145,9 +145,21 @@ RUN composer dump-autoload --no-scripts --optimize \
     && npm run build:ssr
 
 # ----------------------------------------------------------------------------
-# Stage 6: dev — local development image (bind-mount the source at runtime)
+# Studio media runtime — Pillow musllinux wheels include Bengali shaping
 # ----------------------------------------------------------------------------
-FROM system-base AS dev
+FROM system-base AS studio-runtime
+
+RUN apk add --no-cache python3 ffmpeg \
+    && python3 -m venv /opt/studio-media \
+    && /opt/studio-media/bin/pip install --no-cache-dir --only-binary=:all: Pillow==12.2.0 \
+    && /opt/studio-media/bin/python -c 'from PIL import features; assert features.check_feature("raqm")'
+
+ENV STUDIO_PYTHON=/opt/studio-media/bin/python
+
+# ----------------------------------------------------------------------------
+# Dev image — bind-mount the source at runtime.
+# ----------------------------------------------------------------------------
+FROM studio-runtime AS dev
 
 ARG UID=1000
 ARG GID=1000
@@ -179,7 +191,7 @@ ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 # ----------------------------------------------------------------------------
 # Stage 7: production — self-contained image for self-hosters
 # ----------------------------------------------------------------------------
-FROM system-base AS production
+FROM studio-runtime AS production
 
 # php-fpm runs as www-data (Alpine default pool config) — that's the user
 # storage and bootstrap/cache must be owned by, so Laravel can write logs,

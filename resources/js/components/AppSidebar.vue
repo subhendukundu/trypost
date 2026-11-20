@@ -3,12 +3,13 @@ import { Link, router, usePage } from '@inertiajs/vue3';
 import {
     IconBulb,
     IconCalendarEvent,
-    IconTrendingUp,
     IconFileText,
     IconLayoutGrid,
     IconPlus,
     IconRepeat,
+    IconTrendingUp,
     IconUsers,
+    IconVideo,
 } from '@tabler/icons-vue';
 import { trans } from 'laravel-vue-i18n';
 import { computed, ref } from 'vue';
@@ -46,22 +47,20 @@ import { openPostComposer } from '@/composables/useGlobalPostComposer';
 import { usePublishView } from '@/composables/usePublishView';
 import { useWorkspaceAbilities } from '@/composables/useWorkspaceAbilities';
 import { insights } from '@/routes/app';
-import { index as ideasIndex, create as createIdea } from '@/routes/app/create/ideas';
+import {
+    create as createIdea,
+    index as ideasIndex,
+} from '@/routes/app/create/ideas';
 import { index as repurposes } from '@/routes/app/repurposes';
+import { index as studioIndex } from '@/routes/app/studio';
 import type { NavItem } from '@/types';
 import type { SidebarChannel } from '@/types/channel';
 
 const page = usePage();
-const currentWorkspace = computed(
-    () => page.props.auth.currentWorkspace,
-);
+const currentWorkspace = computed(() => page.props.auth.currentWorkspace);
 
-const {
-    canCreatePost,
-    canManageRepurposes,
-    canManageAccounts,
-    canManageTeam,
-} = useWorkspaceAbilities();
+const { canCreatePost, canManageRepurposes, canManageAccounts, canManageTeam } =
+    useWorkspaceAbilities();
 const { publishUrl } = usePublishView();
 const hasUnfinishedPost = useHasUnfinishedPost();
 const { open: openConnectDialog } = useConnectChannelDialog();
@@ -92,6 +91,12 @@ const mainNavItems = computed<NavItem[]>(() => [
               },
           ]
         : []),
+    {
+        title: 'Studio',
+        href: studioIndex.url(),
+        activePattern: '/studio',
+        icon: IconVideo,
+    },
     {
         title: trans('sidebar.groups.posts'),
         href: publishUrl.value,
@@ -124,7 +129,7 @@ const mainNavItems = computed<NavItem[]>(() => [
         >
             <Link
                 :href="postsIndex.url()"
-                class="flex h-8 items-center rounded-md px-2 outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-ring group-data-[collapsible=icon]:px-1"
+                class="flex h-8 items-center rounded-md px-2 outline-hidden group-data-[collapsible=icon]:px-1 focus-visible:ring-2 focus-visible:ring-sidebar-ring"
                 data-testid="sidebar-logo"
             >
                 <span class="inline-flex group-data-[collapsible=icon]:hidden">
@@ -147,16 +152,17 @@ const mainNavItems = computed<NavItem[]>(() => [
                             <DropdownMenu>
                                 <DropdownMenuTrigger as-child>
                                     <Button
-                                        class="relative h-9 w-full justify-center gap-1.5 rounded-lg bg-primary-strong font-medium text-primary-strong-foreground hover:bg-primary-text-hover data-[state=open]:bg-primary-text-hover dark:hover:bg-primary dark:data-[state=open]:bg-primary group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-0"
+                                        class="relative h-9 w-full justify-center gap-1.5 rounded-lg bg-primary-strong font-medium text-primary-strong-foreground group-data-[collapsible=icon]:size-8 group-data-[collapsible=icon]:px-0 hover:bg-primary-text-hover data-[state=open]:bg-primary-text-hover dark:hover:bg-primary dark:data-[state=open]:bg-primary"
                                         :aria-label="$t('sidebar.new')"
                                         data-testid="sidebar-new"
                                     >
                                         <IconPlus
                                             class="hidden size-4 group-data-[collapsible=icon]:block"
                                         />
-                                        <span class="group-data-[collapsible=icon]:hidden">{{
-                                            $t('sidebar.new')
-                                        }}</span>
+                                        <span
+                                            class="group-data-[collapsible=icon]:hidden"
+                                            >{{ $t('sidebar.new') }}</span
+                                        >
                                         <span
                                             v-if="hasUnfinishedPost"
                                             class="absolute -top-0.5 -right-0.5 size-2.5 rounded-full bg-warning ring-2 ring-sidebar"
@@ -189,13 +195,18 @@ const mainNavItems = computed<NavItem[]>(() => [
                                             />
                                         </span>
                                         <span class="grid gap-0.5">
-                                            <span class="text-sm font-semibold">{{
-                                                $t('sidebar.new_menu.post')
-                                            }}</span>
+                                            <span
+                                                class="text-sm font-semibold"
+                                                >{{
+                                                    $t('sidebar.new_menu.post')
+                                                }}</span
+                                            >
                                             <span
                                                 class="text-xs font-normal text-muted-foreground"
                                                 >{{
-                                                    $t('sidebar.new_menu.post_description')
+                                                    $t(
+                                                        'sidebar.new_menu.post_description',
+                                                    )
                                                 }}</span
                                             >
                                         </span>
@@ -223,18 +234,27 @@ const mainNavItems = computed<NavItem[]>(() => [
                                             />
                                         </span>
                                         <span class="grid gap-0.5">
-                                            <span class="text-sm font-semibold">{{
-                                                $t('sidebar.new_menu.idea')
-                                            }}</span>
+                                            <span
+                                                class="text-sm font-semibold"
+                                                >{{
+                                                    $t('sidebar.new_menu.idea')
+                                                }}</span
+                                            >
                                             <span
                                                 class="text-xs font-normal text-muted-foreground"
                                                 >{{
-                                                    $t('sidebar.new_menu.idea_description')
+                                                    $t(
+                                                        'sidebar.new_menu.idea_description',
+                                                    )
                                                 }}</span
                                             >
                                         </span>
                                     </DropdownMenuItem>
-                                    <template v-if="canManageAccounts || canManageTeam">
+                                    <template
+                                        v-if="
+                                            canManageAccounts || canManageTeam
+                                        "
+                                    >
                                         <DropdownMenuSeparator />
                                         <DropdownMenuItem
                                             v-if="canManageAccounts"
@@ -251,7 +271,9 @@ const mainNavItems = computed<NavItem[]>(() => [
                                             data-testid="sidebar-new-member"
                                             @select="openInviteMemberDialog"
                                         >
-                                            <IconUsers class="size-4 text-muted-foreground" />
+                                            <IconUsers
+                                                class="size-4 text-muted-foreground"
+                                            />
                                             {{ $t('sidebar.new_menu.member') }}
                                         </DropdownMenuItem>
                                     </template>

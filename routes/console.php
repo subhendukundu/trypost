@@ -24,6 +24,7 @@ use App\Services\PostHogService;
 use App\Support\Analytics\DiscoverySchedule;
 use Illuminate\Support\Facades\Schedule;
 
+Schedule::command('studio:run-schedule')->everyMinute()->withoutOverlapping()->onOneServer();
 Schedule::command(ProcessScheduledPosts::class)->everyMinute()->withoutOverlapping()->onOneServer();
 Schedule::command(CheckSocialConnections::class)->daily()->withoutOverlapping()->onOneServer();
 Schedule::command(CheckUpcomingPostConnections::class)->everyFifteenMinutes()->withoutOverlapping()->onOneServer();

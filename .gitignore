@@ -33,3 +33,6 @@ yarn-error.log
 /.zed
 /docs/
 /.superpowers/
+
+# Studio runner bytecode
+/scripts/studio/**/__pycache__/

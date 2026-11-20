@@ -8,6 +8,7 @@ use App\Enums\Post\CreatedVia;
 use App\Enums\Post\Status as PostStatus;
 use App\Models\Post;
 use App\Models\User;
+use App\Studio\StudioRelease;
 use App\Support\Media\MediaCopyBatch;
 use App\Support\PostPlatformMetaRules;
 use Illuminate\Support\Arr;
@@ -27,11 +28,14 @@ class DuplicatePost
                 ]);
             }
 
-            return CreateChannelPost::execute($original->workspace, $user, [
+            $copy = CreateChannelPost::execute($original->workspace, $user, [
                 ...self::destination($original),
                 'status' => PostStatus::Draft->value,
                 'created_via' => CreatedVia::Web,
             ], $batch);
+            StudioRelease::copyTo($original, $copy);
+
+            return $copy;
         });
     }
 

@@ -18,6 +18,7 @@ use App\Jobs\PublishPost;
 use App\Models\Post;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Studio\StudioRelease;
 use App\Support\Media\MediaCopyBatch;
 use App\Support\PostApproval;
 use App\Support\PostCompositionValidator;
@@ -61,6 +62,11 @@ class UpdatePost
 
         if (array_key_exists('platforms', $data)) {
             throw ValidationException::withMessages(['platforms' => __('validation.prohibited', ['attribute' => 'platforms'])]);
+        }
+
+        if ((string) data_get($data, 'status', $post->status->value) !== PostStatus::Draft->value
+            && StudioRelease::tracks($post)) {
+            StudioRelease::requiresOwnerReview();
         }
 
         return $post->hasChannel()

@@ -7,6 +7,7 @@ namespace App\Actions\Post;
 use App\Enums\Post\RecurrenceFrequency;
 use App\Enums\Post\Status as PostStatus;
 use App\Models\Post;
+use App\Studio\StudioRelease;
 use App\Support\Media\MediaCopyBatch;
 use App\Support\PostingSchedule;
 use App\Support\Timezone;
@@ -33,7 +34,7 @@ class ScheduleNextOccurrence
      */
     public static function execute(Post $post): Collection
     {
-        if (! $post->isRecurring()) {
+        if (! $post->isRecurring() || StudioRelease::tracks($post)) {
             return collect();
         }
 

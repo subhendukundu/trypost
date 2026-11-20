@@ -82,6 +82,8 @@ use App\Mcp\Tools\SocialAccount\MovePostToSlotTool;
 use App\Mcp\Tools\SocialAccount\ReorderQueueTool;
 use App\Mcp\Tools\SocialAccount\SearchInstagramAudioTool;
 use App\Mcp\Tools\SocialAccount\UpdatePostingScheduleTool;
+use App\Mcp\Tools\Studio\GetStudioProjectTool;
+use App\Mcp\Tools\Studio\StartStudioRunTool;
 use App\Mcp\Tools\Webhook\CreateWebhookTool;
 use App\Mcp\Tools\Webhook\DeleteWebhookTool;
 use App\Mcp\Tools\Webhook\GetWebhookTool;
@@ -109,6 +111,9 @@ class TryPostServer extends Server
     public int $maxPaginationLength = 200;
 
     protected array $tools = [
+        GetStudioProjectTool::class,
+        StartStudioRunTool::class,
+
         ListPostsTool::class,
         GetPostTool::class,
         CreatePostTool::class,

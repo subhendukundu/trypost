@@ -55,6 +55,8 @@ use App\Http\Controllers\App\Settings\PasswordController;
 use App\Http\Controllers\App\Settings\PreferencesController;
 use App\Http\Controllers\App\Settings\ProfileController;
 use App\Http\Controllers\App\Settings\SessionController;
+use App\Http\Controllers\App\StudioController;
+use App\Http\Controllers\App\StudioReleaseController;
 use App\Http\Controllers\App\TourController;
 use App\Http\Controllers\App\UnsplashController;
 use App\Http\Controllers\App\WebhookController;
@@ -243,6 +245,19 @@ Route::middleware(['auth', EnsureAccountReady::class, EnsureHasWorkspace::class]
     Route::get('insights/publications/{publication}/details', [InsightsController::class, 'publication'])
         ->whereUuid('publication')
         ->name('app.insights.publications.details');
+
+    Route::prefix('studio')->name('app.studio.')->group(function () {
+        Route::get('/', [StudioController::class, 'index'])->name('index');
+        Route::post('projects', [StudioController::class, 'store'])->name('store');
+        Route::patch('settings', [StudioController::class, 'settings'])->name('settings');
+        Route::post('projects/{project}/notes', [StudioController::class, 'note'])->whereNumber('project')->name('notes');
+        Route::patch('projects/{project}/finalist', [StudioController::class, 'finalist'])->whereNumber('project')->name('finalist');
+        Route::post('projects/{project}/retry', [StudioController::class, 'retry'])->whereNumber('project')->name('retry');
+        Route::get('projects/{project}/media/{artifact}', [StudioController::class, 'media'])->whereNumber(['project', 'artifact'])->name('media');
+        Route::post('projects/{project}/draft', [StudioReleaseController::class, 'draft'])->whereNumber('project')->name('draft');
+        Route::get('releases/{post}', [StudioReleaseController::class, 'show'])->whereUuid('post')->name('release');
+        Route::post('releases/{post}', [StudioReleaseController::class, 'approve'])->whereUuid('post')->name('approve');
+    });
 
     Route::get('schedule', [PostController::class, 'index'])->name('app.posts.index');
     Route::get('schedule/calendar/{view?}', [PostController::class, 'calendar'])
