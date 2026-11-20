@@ -223,7 +223,7 @@ class StudioProduction
             ->latest('date')->latest('collected_at')
             ->get(['publication_id', 'collected_at', 'views_count', 'reach_count', 'shares_count', 'average_watch_time_milliseconds'])
             ->unique('publication_id')->keyBy('publication_id');
-        $evidence = $publications->map(function (AnalyticsPublication $publication) use ($snapshots): array {
+        $evidence = $publications->toBase()->map(function (AnalyticsPublication $publication) use ($snapshots): array {
             $snapshot = $snapshots->get($publication->id);
 
             return [

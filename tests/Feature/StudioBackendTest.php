@@ -68,6 +68,28 @@ test('owner can queue one private production that uses only recent workspace ree
     $this->assertDatabaseCount('posts', 0);
 });
 
+test('a fresh project can use prior review notes before social analytics is connected', function () {
+    $previous = StudioProduction::start($this->workspace, $this->owner, ['brief' => 'First private Reel.', 'format' => 'reel']);
+    saveStudioManifest($previous);
+    (new StudioRunJob($previous->id))->handle();
+    $previous->project->notes()->create([
+        'revision_id' => $previous->revision()->sole()->id,
+        'run_id' => $previous->id,
+        'time_seconds' => 3,
+        'note' => 'Keep the prop in the wide shot.',
+    ]);
+
+    $response = $this->actingAs($this->owner)->postJson(route('app.studio.store'), [
+        'brief' => 'The next private Reel.', 'format' => 'reel',
+    ])->assertAccepted();
+    $run = StudioRun::query()->findOrFail($response->json('run_id'));
+    expect($run->request['evidence'])->toHaveCount(1)
+        ->and($run->request['evidence'][0])->toMatchArray([
+            'type' => 'owner_review_note',
+            'note' => 'Keep the prop in the wide shot.',
+        ]);
+});
+
 test('workspace members can review their studio but only administrators can start or configure production', function () {
     $member = workspaceMember($this->workspace, 'approval');
     $this->actingAs($member)->get(route('app.studio.index'))->assertOk()->assertInertia(fn (Assert $page) => $page
