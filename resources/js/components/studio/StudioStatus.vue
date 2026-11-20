@@ -11,6 +11,8 @@ const tone = computed(() => {
         return 'bg-destructive/10 text-destructive-text';
     if (isActive(props.status))
         return 'bg-blue-500/10 text-blue-700 dark:text-blue-300';
+    if (props.status === 'awaiting_storyboard')
+        return 'bg-amber-500/10 text-amber-800 dark:text-amber-300';
     if (
         ['ready_for_review', 'needs_review', 'completed'].includes(props.status)
     ) {

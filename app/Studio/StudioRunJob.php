@@ -34,6 +34,10 @@ class StudioRunJob implements ShouldQueue
 
         $manifest = $run->readPrivateJson('manifest.json');
         if ($manifest === null) {
+            if ($this->pauseForStoryboard($run)) {
+                return;
+            }
+
             $problem = $this->configurationProblem($run);
             if ($problem !== null) {
                 self::finish($run, 'blocked', $problem);
@@ -47,7 +51,17 @@ class StudioRunJob implements ShouldQueue
         }
 
         if ($manifest === null) {
+            if ($this->pauseForStoryboard($run)) {
+                return;
+            }
+
             self::finish($run, 'failed', self::failureMessage($run->readPrivateJson('failure.json')['code'] ?? ''));
+
+            return;
+        }
+
+        if ($run->needsStoryboardApproval()) {
+            self::finish($run, 'failed', __('Studio received a rendered cut before the storyboard was approved. Check the Studio worker version.'));
 
             return;
         }
@@ -74,13 +88,14 @@ class StudioRunJob implements ShouldQueue
             }
 
             $progress = $current->readPrivateJson('progress.json');
+            $waiting = $status === 'awaiting_storyboard';
             $current->update([
                 'status' => $status,
                 'stage' => $status,
-                'message' => null,
-                'error' => $message,
+                'message' => $waiting ? $message : null,
+                'error' => $waiting ? null : $message,
                 'events' => $progress['events'] ?? $current->events,
-                'finished_at' => now(),
+                'finished_at' => $waiting ? null : now(),
             ]);
             $project->update(['status' => $status]);
         });
@@ -100,30 +115,48 @@ class StudioRunJob implements ShouldQueue
             }
 
             $project->update(['status' => 'running']);
+            $run->refresh();
 
             return true;
         });
     }
 
+    private function pauseForStoryboard(StudioRun $run): bool
+    {
+        if ($run->storyboard() === null) {
+            return false;
+        }
+
+        self::finish($run, 'awaiting_storyboard', __('Two storyboards are ready. Choose one before Studio records narration.'));
+
+        return true;
+    }
+
     private function configurationProblem(StudioRun $run): ?string
     {
         $settings = $run->request['settings'];
-        $providers = config('studio.providers', []);
-        if (blank($settings['provider']) || empty($providers[$settings['provider']])) {
-            return __('Configure and select a connected model provider in Studio settings, then resume this run.');
-        }
+        if ($run->storyboard_decision === null) {
+            $providers = config('studio.providers', []);
+            if (blank($settings['provider']) || empty($providers[$settings['provider']])) {
+                return __('Configure and select a connected model provider in Studio settings, then resume this run.');
+            }
 
-        if (filled($settings['alternative_provider']) && empty($providers[$settings['alternative_provider']])) {
-            return __('The alternative model provider is unavailable. Check Studio settings before resuming.');
-        }
+            if (filled($settings['alternative_provider']) && empty($providers[$settings['alternative_provider']])) {
+                return __('The alternative model provider is unavailable. Check Studio settings before resuming.');
+            }
 
-        $minimumCalls = $run->kind === 'revise' ? 1 : 3;
-        if ($settings['max_model_calls'] < $minimumCalls) {
-            return __('Set a model call budget for this production in Studio settings, then resume.');
+            $minimumCalls = $run->kind === 'revise' ? 1 : 3;
+            if ($settings['max_model_calls'] < $minimumCalls) {
+                return __('Set a model call budget for this production in Studio settings, then resume.');
+            }
         }
 
         if ($run->kind === 'produce' && $settings['max_voice_characters'] < 36) {
             return __('Set a voice character budget in Studio settings, then resume.');
+        }
+
+        if ($run->needsStoryboardApproval()) {
+            return null;
         }
 
         if ($run->kind === 'produce' && config('studio.voice_configured') === false) {
@@ -132,7 +165,9 @@ class StudioRunJob implements ShouldQueue
 
         if ($run->kind === 'produce' && config('studio.voice_configured') === true
             && blank($settings['voice_id']) && blank(config('studio.voice_id'))) {
-            return __('Add a narration voice in Studio settings, then resume.');
+            return $run->storyboard_decision === null
+                ? __('Add a narration voice in Studio settings, then resume.')
+                : __('Configure the Studio server’s default narration voice, then resume this approved storyboard.');
         }
 
         return null;
@@ -146,6 +181,29 @@ class StudioRunJob implements ShouldQueue
         chmod($directory, 0700);
 
         $input = $directory.'/request.json';
+        if ($run->storyboard_decision === null) {
+            $this->writeRequest($run, $directory, $input);
+        } else {
+            if (! is_file($input) || is_link($input)) {
+                throw new RuntimeException('The saved Studio storyboard request is missing.');
+            }
+
+            $this->writePrivateJson($directory.'/storyboard-approval.json', $run->storyboard_decision);
+        }
+
+        $process = new Process([
+            config('studio.python', 'python3'),
+            config('studio.runner', base_path('scripts/studio/run.py')),
+            $input,
+            $directory,
+        ], base_path(), env: config('studio.environment', []), timeout: 1380);
+        $process->disableOutput();
+        $process->run();
+    }
+
+    private function writeRequest(StudioRun $run, string $directory, string $input): void
+    {
+        $disk = Storage::disk('local');
         $payload = $run->request;
         if ($run->kind === 'revise') {
             $parent = $run->project->revisions()->with('run')->findOrFail($payload['revision']['parent_id']);
@@ -155,20 +213,17 @@ class StudioRunJob implements ShouldQueue
             $payload['settings']['logo_path'] = $this->workspaceLogo($run, $directory, $input);
         }
 
+        $this->writePrivateJson($input, $payload);
+    }
+
+    private function writePrivateJson(string $path, array $payload): void
+    {
         $encoded = json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
-        if (file_put_contents($input.'.tmp', $encoded, LOCK_EX) === false || ! rename($input.'.tmp', $input)) {
-            throw new RuntimeException('Unable to write the Studio request.');
+        if (file_put_contents($path.'.tmp', $encoded, LOCK_EX) === false || ! rename($path.'.tmp', $path)) {
+            throw new RuntimeException('Unable to save a private Studio run file.');
         }
 
-        chmod($input, 0600);
-        $process = new Process([
-            config('studio.python', 'python3'),
-            config('studio.runner', base_path('scripts/studio/run.py')),
-            $input,
-            $directory,
-        ], base_path(), env: config('studio.environment', []), timeout: 1380);
-        $process->disableOutput();
-        $process->run();
+        chmod($path, 0600);
     }
 
     private function workspaceLogo(StudioRun $run, string $directory, string $input): ?string
@@ -286,6 +341,7 @@ class StudioRunJob implements ShouldQueue
             'provider_quota' => __('A production provider reached its usage limit.'),
             'provider_outcome_unknown' => __('A provider request ended without confirmation. Studio paused to avoid repeating the request.'),
             'invalid_editorial_output', 'duplicate_treatments' => __('The writer or reviewer delivered an unusable result.'),
+            'invalid_storyboard_approval' => __('Studio could not match the saved storyboard to its approval. Restore the original storyboard before resuming.'),
             'film_verification_failed', 'shot_verification_failed' => __('The cut failed video, audio or timing verification.'),
             'invalid_brand_mark' => __('The workspace logo must be a still PNG, JPEG or WebP up to 4096 pixels in either dimension.'),
             'render_not_configured', 'media_tool_failed' => __('The render tools could not complete this cut. Check the Studio worker.'),

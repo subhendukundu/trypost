@@ -126,23 +126,55 @@ class StudioProduction
         return DB::transaction(function () use ($project, $runId): StudioRun {
             self::ensureWorkspaceIdle($project->workspace_id);
             $project = StudioProject::query()->lockForUpdate()->findOrFail($project->id);
-            $run = $project->runs()->findOrFail($runId);
+            $run = $project->runs()->lockForUpdate()->findOrFail($runId);
             if (! in_array($run->status, ['failed', 'blocked', 'interrupted'], true)) {
                 throw ValidationException::withMessages(['run_id' => __('This run cannot be resumed.')]);
             }
 
-            if ($run->started_at === null) {
+            if ($run->started_at === null && $run->storyboard_decision === null) {
                 $payload = $run->request;
                 $payload['settings'] = self::snapshot(self::settings($project->workspace));
                 $run->request = $payload;
             }
 
-            $run->fill(['status' => 'queued', 'stage' => 'queued', 'error' => null, 'finished_at' => null])->save();
-            $project->update(['status' => 'queued']);
-            StudioRunJob::dispatch($run->id)->afterCommit();
-
-            return $run;
+            return self::requeue($project, $run);
         });
+    }
+
+    public static function approveStoryboard(StudioProject $project, int $runId, int $treatment, string $fingerprint): StudioRun
+    {
+        return DB::transaction(function () use ($project, $runId, $treatment, $fingerprint): StudioRun {
+            self::ensureWorkspaceIdle($project->workspace_id);
+            $project = StudioProject::query()->lockForUpdate()->findOrFail($project->id);
+            $run = $project->runs()->lockForUpdate()->findOrFail($runId);
+            $storyboard = $run->status === 'awaiting_storyboard' ? $run->storyboard() : null;
+            if ($storyboard === null || ! hash_equals($storyboard['fingerprint'], $fingerprint)) {
+                throw ValidationException::withMessages(['fingerprint' => __('This storyboard has changed or was already approved. Reload Studio to check its status.')]);
+            }
+
+            $characters = array_sum(array_map(
+                fn (array $shot): int => mb_strlen($shot['speech'], 'UTF-8'),
+                $storyboard['treatments'][$treatment]['shots'],
+            ));
+            if ($characters > $run->request['settings']['max_voice_characters']) {
+                throw ValidationException::withMessages([
+                    'treatment' => __('This treatment exceeds the saved narration budget. Choose the other treatment or raise the budget and start a new run.'),
+                ]);
+            }
+
+            $run->storyboard_decision = ['treatment' => $treatment, 'fingerprint' => $fingerprint];
+
+            return self::requeue($project, $run);
+        });
+    }
+
+    private static function requeue(StudioProject $project, StudioRun $run): StudioRun
+    {
+        $run->fill(['status' => 'queued', 'stage' => 'queued', 'message' => null, 'error' => null, 'finished_at' => null])->save();
+        $project->update(['status' => 'queued']);
+        StudioRunJob::dispatch($run->id)->afterCommit();
+
+        return $run;
     }
 
     private static function ensureWorkspaceIdle(string $workspaceId): void
@@ -170,10 +202,10 @@ class StudioProduction
             'status' => 'queued',
         ]);
 
-        return self::queue($project, 'produce', $settings);
+        return self::queue($project, 'produce', $settings, reviewStoryboard: (bool) ($input['review_storyboard'] ?? false));
     }
 
-    private static function queue(StudioProject $project, string $kind, StudioSetting $settings, ?array $revision = null): StudioRun
+    private static function queue(StudioProject $project, string $kind, StudioSetting $settings, ?array $revision = null, bool $reviewStoryboard = false): StudioRun
     {
         $key = (string) Str::uuid();
         $run = $project->runs()->create([
@@ -195,7 +227,7 @@ class StudioProduction
                 'settings' => self::snapshot($settings),
                 'evidence' => $kind === 'produce' ? self::evidence($project->workspace_id) : [],
                 'revision' => $revision,
-            ],
+            ] + ($reviewStoryboard ? ['review_storyboard' => true] : []),
         ]);
         $project->update(['status' => 'queued']);
         StudioRunJob::dispatch($run->id)->afterCommit();

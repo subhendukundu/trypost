@@ -21,7 +21,7 @@ defineProps<{ revision: Revision | null; providers: Provider[] }>();
             class="rounded-xl border bg-muted/25 p-4"
         >
             <div class="flex flex-wrap items-center justify-between gap-2">
-                <h3 class="text-sm font-semibold">Editor's decision</h3>
+                <h3 class="text-sm font-semibold">Editor’s recommendation</h3>
                 <p
                     v-if="revision.review.quality_score != null"
                     class="text-xs text-muted-foreground"

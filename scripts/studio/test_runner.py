@@ -1,11 +1,14 @@
 """Offline acceptance for render and revision. The fixture audio is a tone, never speech."""
 
 import base64
+from hashlib import sha256
+import json
 from pathlib import Path
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 from zipfile import ZipFile
 
 from PIL import Image
@@ -28,11 +31,13 @@ class RunnerTest(unittest.TestCase):
                          'max_model_calls': 3, 'max_voice_characters': 800, 'voice_id': 'test-only'},
         }
         self.calls = []
+        self.voices_resolved = []
+        self.spoken = []
 
     def engine(self, request, directory):
-        directory.mkdir()
+        directory.mkdir(exist_ok=True)
         return run.Engine(request, directory, model_resolver=lambda name: (name, 'test-only'),
-                          voice_resolver=lambda voice: None, model=self.fake_model, voice=self.fake_voice)
+                          voice_resolver=self.voices_resolved.append, model=self.fake_model, voice=self.fake_voice)
 
     def fake_model(self, config, prompt, schema):
         self.calls.append(config[0])
@@ -58,6 +63,7 @@ class RunnerTest(unittest.TestCase):
 
     def fake_voice(self, config, text, language):
         self.assertEqual(language, 'bn')
+        self.spoken.append(text)
         mp3 = render.run_media('ffmpeg', '-v', 'error', '-f', 'lavfi', '-i',
                                'sine=frequency=520:duration=0.7', '-f', 'mp3', '-')
         return ({'audio_base64': base64.b64encode(mp3).decode('ascii'),
@@ -114,6 +120,71 @@ class RunnerTest(unittest.TestCase):
         run.put_json(request_path, self.request)
         result = subprocess.run([sys.executable, run.__file__, request_path, original], capture_output=True)
         self.assertEqual(result.returncode, 0, result.stderr.decode())
+
+    def test_storyboard_choice_resumes_the_original_run(self):
+        request = dict(self.request, review_storyboard=True)
+        request_path = self.root / 'request.json'
+        run.put_json(request_path, request)
+        output = self.root / 'run'
+        storyboard_path = output / 'storyboard.json'
+        approval_path = output / 'storyboard-approval.json'
+
+        with patch.object(render, 'available') as renderer:
+            storyboard = self.engine(request, output).produce()
+            renderer.assert_not_called()
+        self.assertEqual(storyboard['status'], 'awaiting_storyboard')
+        self.assertEqual(storyboard['review']['selected'], 0)
+        self.assertEqual([item['selected'] for item in storyboard['treatments']], [True, False])
+        self.assertEqual(len(self.calls), 3)
+        original_bytes = storyboard_path.read_bytes()
+        original_progress = (output / 'progress.json').read_bytes()
+        self.assertFalse((output / 'source').exists())
+        self.assertFalse((output / 'manifest.json').exists())
+
+        # Repeating a paused run through the CLI uses live files but needs no providers.
+        result = subprocess.run([sys.executable, run.__file__, request_path, output], capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(json.loads(result.stdout), {'status': 'awaiting_storyboard'})
+        self.assertEqual((output / 'progress.json').read_bytes(), original_progress)
+
+        fingerprint = sha256(original_bytes).hexdigest()
+        for treatment, approval_fingerprint in [(1, '0' * 64), (True, fingerprint)]:
+            run.put_json(approval_path, {'treatment': treatment, 'fingerprint': approval_fingerprint})
+            with self.assertRaises(StudioError) as error:
+                self.engine(request, output).produce()
+            self.assertEqual(error.exception.code, 'invalid_storyboard_approval')
+
+        approved = {'treatment': 1, 'fingerprint': fingerprint}
+        run.put_json(approval_path, approved)
+        with patch.object(render, 'available', side_effect=StudioError('render_not_configured', 'Fixture: unavailable renderer.')):
+            with self.assertRaises(StudioError) as error:
+                self.engine(request, output).produce()
+        self.assertEqual(error.exception.code, 'render_not_configured')
+        run.put_json(approval_path, dict(approved, treatment=0))
+        with self.assertRaises(StudioError) as error:
+            self.engine(request, output).produce()
+        self.assertEqual(error.exception.code, 'invalid_storyboard_approval')
+        self.assertEqual(self.voices_resolved, [])
+        self.assertEqual(self.spoken, [])
+        self.assertEqual(len(self.calls), 3)
+
+        run.put_json(approval_path, approved)
+        manifest = self.engine(request, output).produce()
+        self.assertEqual(manifest['status'], 'ready_for_review')
+        self.assertEqual(manifest['review'], storyboard['review'])
+        self.assertEqual([item['selected'] for item in manifest['treatments']], [False, True])
+        self.assertEqual(manifest['title'], storyboard['treatments'][1]['title'])
+        self.assertEqual(manifest['caption'], storyboard['treatments'][1]['caption'])
+        self.assertEqual(manifest['summary'], storyboard['treatments'][1]['assessment'])
+        self.assertIn('তোমার কাপ', (output / 'captions.srt').read_text(encoding='utf-8'))
+        self.assertEqual(self.voices_resolved, ['test-only'])
+        self.assertEqual(self.spoken, [shot['speech'] for shot in storyboard['treatments'][1]['shots']])
+        self.assertEqual(manifest['usage']['model_calls'], 3)
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(storyboard_path.read_bytes(), original_bytes)
+        result = subprocess.run([sys.executable, run.__file__, request_path, output], capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr.decode())
+        self.assertEqual(json.loads(result.stdout), {'status': 'ready_for_review'})
 
     def test_interrupted_request_is_not_replayed(self):
         output = self.root / 'run'

@@ -277,6 +277,64 @@ class Engine:
             raise StudioError('budget_exhausted', 'Producing a Reel requires three authorized model calls: two treatments and one editorial comparison.')
         if type(self.settings.get('max_voice_characters')) is not int or not 36 <= self.settings['max_voice_characters'] <= 4000:
             raise StudioError('budget_exhausted', 'Producing a Reel requires an authorized narration character budget.')
+        review_storyboard = self.request.get('review_storyboard', False)
+        if type(review_storyboard) is not bool:
+            raise StudioError('invalid_input', 'Storyboard review must be enabled or disabled.')
+        if review_storyboard:
+            storyboard, choice = self.reviewed_storyboard()
+            if choice is None:
+                return storyboard
+            render.available()
+            speaker = self.voice_resolver(self.settings.get('voice_id'))
+        else:
+            render.available()
+            speaker = self.voice_resolver(self.settings.get('voice_id'))
+            storyboard = self.plan_storyboard()
+            choice = storyboard['review']['selected']
+        review = storyboard['review']
+        treatments = [dict(treatment, selected=index == choice)
+                      for index, treatment in enumerate(storyboard['treatments'])]
+        selected = treatments[choice]
+        total = sum(len(shot['speech']) for shot in selected['shots'])
+        if total > self.settings['max_voice_characters']:
+            raise StudioError('budget_exhausted', 'The selected treatment exceeds the narration budget. The voice requests were not sent.')
+        self.stage('narration', 'Recording the chosen cut with the configured ElevenLabs voice.', 'ElevenLabs')
+        shots = [self.narrate(shot, index, speaker) for index, shot in enumerate(selected['shots'])]
+        self.stage('render', 'Rendering the editable shots, captions and cover.')
+        return self.finish(selected['title'], selected['caption'], treatments, review, shots)
+
+    def reviewed_storyboard(self):
+        path = self.output / 'storyboard.json'
+        approval = self.output / 'storyboard-approval.json'
+        accepted = self.checkpoints / 'storyboard-approval.json'
+        if not path.is_file():
+            if approval.is_file() or accepted.is_file():
+                raise StudioError('invalid_storyboard_approval', 'The saved storyboard is missing. No approved cut can be rendered.')
+            put_json(path, self.plan_storyboard())
+        if not approval.is_file():
+            if accepted.is_file():
+                raise StudioError('invalid_storyboard_approval', 'The accepted storyboard approval is missing.')
+            if not self.progress.is_file() or read_json(self.progress).get('stage') != 'awaiting_storyboard':
+                self.stage('awaiting_storyboard', 'Both treatments are ready. Choose a storyboard to start rendering.')
+            return read_json(path), None
+        try:
+            decision = read_json(approval)
+        except (OSError, ValueError, StudioError):
+            raise StudioError('invalid_storyboard_approval', 'Studio could not read the saved storyboard approval.') from None
+        if (not isinstance(decision, dict) or set(decision) != {'treatment', 'fingerprint'}
+                or type(decision['treatment']) is not int or decision['treatment'] not in (0, 1)
+                or decision['fingerprint'] != digest(path)):
+            raise StudioError('invalid_storyboard_approval', 'This approval does not match a treatment in the saved storyboard.')
+        storyboard = read_json(path)
+        if accepted.is_file():
+            if read_json(accepted) != decision:
+                raise StudioError('invalid_storyboard_approval', 'A different treatment was already accepted for this run.')
+        else:
+            # Paid voice checkpoints belong to one treatment for the lifetime of this run.
+            put_json(accepted, decision)
+        return storyboard, decision['treatment']
+
+    def plan_storyboard(self):
         direction = ("Choose a new story if the brief leaves the topic open. Make a grounded 30–50 second illustrated "
                      "vertical Reel with 3–7 shots, each spoken in the requested language. Keep each speech 4–155 characters. "
                      "Create the story through an observable action in the first two seconds, one sharp shift in each shot, "
@@ -289,7 +347,6 @@ class Engine:
         alternative_name = self.settings.get('alternative_provider') or primary_name
         primary = self.model_resolver(primary_name)
         alternate = self.model_resolver(alternative_name)
-        speaker = self.voice_resolver(self.settings.get('voice_id'))
         context = self.story_context()
         self.stage('research', ('Planning from the supplied brief and saved editorial evidence.' if context['editorial_evidence']
                                 else 'Planning from the supplied creative brief. No publication history was available.'))
@@ -314,17 +371,10 @@ class Engine:
                          'You are the independent script editor. Pick the stronger treatment, index 0 or 1. Compare opening clarity, recognisable characters, visible comic payoff, source limitations, and originality. Give a concise reason and specific tradeoffs for both. This is a script assessment, not a video or audience result.',
                          {'context': context, 'treatments': treatments}, REVIEW_SCHEMA)
         review = validate_review(check)
-        selected = treatments[review['selected']]
-        total = sum(len(shot['speech']) for shot in selected['shots'])
-        if total > self.settings['max_voice_characters']:
-            raise StudioError('budget_exhausted', 'The selected treatment exceeds the narration budget. The voice requests were not sent.')
         for index, (treatment, config) in enumerate(zip(treatments, (primary, alternate))):
             treatment.update(provider=config[0], model=config[1], assessment=review[f'assessment_{"a" if index == 0 else "b"}'],
                              selected=index == review['selected'], script='\n'.join(shot['speech'] for shot in treatment['shots']))
-        self.stage('narration', 'Recording the chosen cut with the configured ElevenLabs voice.', 'ElevenLabs')
-        shots = [self.narrate(shot, index, speaker) for index, shot in enumerate(selected['shots'])]
-        self.stage('render', 'Rendering the editable shots, captions and cover.')
-        return self.finish(selected['title'], selected['caption'], treatments, review, shots)
+        return {'version': 1, 'status': 'awaiting_storyboard', 'treatments': treatments, 'review': review}
 
     def narrate(self, shot, index, speaker):
         source = f'source/takes/take-{index:02d}.mp3'
@@ -481,8 +531,10 @@ class Engine:
         usage = self.ledger().values()
         verification['native_language_listening_review'] = 'pending_owner_review'
         verification['audiovisual_creative_review'] = 'pending_owner_review'
+        summary = next((treatment['assessment'] for index, treatment in enumerate(treatments)
+                        if treatment.get('selected') and index != review['selected']), review['rationale'])
         value = {'version': 1, 'status': 'ready_for_review', 'title': title, 'caption': caption,
-                 'summary': review['rationale'], 'treatments': treatments, 'review': review,
+                 'summary': summary, 'treatments': treatments, 'review': review,
                  'duration_seconds': verification['duration_seconds'], 'verification': verification,
                  'artifacts': [{'kind': kind, 'file': name, 'title': label, 'mime': mime,
                                 'bytes': (self.output / name).stat().st_size, 'sha256': digest(self.output / name)}
@@ -514,14 +566,16 @@ def main():
             (output / 'failure.json').unlink(missing_ok=True)
             request = read_json(args.input)
             engine = Engine(request, output)
-            render.available()
             if (output / 'manifest.json').is_file():
                 value = read_json(output / 'manifest.json')
                 for artifact in value['artifacts']:
                     if digest(safe_file(output, artifact['file'])) != artifact['sha256']:
                         raise StudioError('invalid_source', 'A completed result no longer matches its saved media hash.')
+            elif engine.kind == 'produce':
+                value = engine.produce()
             else:
-                value = engine.produce() if engine.kind == 'produce' else engine.revise()
+                render.available()
+                value = engine.revise()
             print(encoded({'status': value['status']}).decode('utf-8'))
             return 0
         except StudioError as error:

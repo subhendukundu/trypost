@@ -60,6 +60,36 @@ export type Treatment = {
     selected: boolean;
 };
 
+export type StoryboardShot = {
+    setting: string;
+    camera: string;
+    character: string;
+    secondary: string;
+    expression: string;
+    action: string;
+    prop: string;
+    speech: string;
+};
+
+export type StoryboardTreatment = Treatment & {
+    angle: string;
+    hook: string;
+    payoff: string;
+    shots: StoryboardShot[];
+};
+
+export type Storyboard = {
+    run_id: number;
+    fingerprint: string;
+    treatments: StoryboardTreatment[];
+    review: {
+        selected: 0 | 1;
+        rationale: string;
+        assessment_a: string;
+        assessment_b: string;
+    };
+};
+
 export type Revision = {
     id: number;
     parent_id: number | null;
@@ -89,6 +119,7 @@ export type Note = {
 
 export type ActiveProject = Project & {
     finalist_revision_id: number | null;
+    storyboard: Storyboard | null;
     runs: Run[];
     revisions: Revision[];
     notes: Note[];
@@ -114,6 +145,7 @@ const labels: Record<string, string> = {
     running: 'In production',
     ready_for_review: 'Ready for review',
     needs_review: 'Needs review',
+    awaiting_storyboard: 'Storyboard ready',
     completed: 'Complete',
     research: 'Research',
     writing: 'Writing',

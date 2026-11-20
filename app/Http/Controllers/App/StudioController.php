@@ -59,6 +59,7 @@ class StudioController extends Controller
             'title' => ['nullable', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:5000'],
             'format' => ['required', Rule::in(['reel'])],
+            'review_storyboard' => ['sometimes', 'required', 'boolean'],
         ]);
         $run = StudioProduction::start($workspace, $request->user(), $input);
 
@@ -128,6 +129,18 @@ class StudioController extends Controller
         return response()->json(['run_id' => $run->id], 202);
     }
 
+    public function storyboard(Request $request, int $project, int $run): JsonResponse
+    {
+        $project = $this->findProject($request, $project, 'update');
+        $input = $request->validate([
+            'treatment' => ['required', 'integer', 'between:0,1'],
+            'fingerprint' => ['required', 'string', 'regex:/^[a-f0-9]{64}$/D'],
+        ]);
+        $run = StudioProduction::approveStoryboard($project, $run, (int) $input['treatment'], $input['fingerprint']);
+
+        return response()->json(['run_id' => $run->id], 202);
+    }
+
     public function finalist(Request $request, int $project): JsonResponse
     {
         $project = $this->findProject($request, $project, 'update');
@@ -185,11 +198,13 @@ class StudioController extends Controller
         }
 
         $releases = StudioRelease::forRevisions($revisions->modelKeys());
+        $runs = $project->runs()->with('revision:id,run_id')->latest('id')->limit(20)->get();
 
         return $this->project($project) + [
             'finalist_revision_id' => $project->finalist_revision_id,
-            'runs' => $project->runs()->with('revision:id,run_id')->latest('id')->limit(20)->get()
-                ->map(fn (StudioRun $run) => $this->run($run)),
+            'runs' => $runs->map(fn (StudioRun $run) => $this->run($run)),
+            'storyboard' => $project->status === 'awaiting_storyboard'
+                ? $runs->firstWhere('status', 'awaiting_storyboard')?->storyboard() : null,
             'revisions' => $revisions->map(fn (StudioRevision $revision) => $this->revision($project, $revision, $releases[$revision->id] ?? [])),
             'notes' => $project->notes()->latest('id')->limit(50)->get()->map(fn (StudioNote $note) => [
                 'id' => $note->id,

@@ -253,6 +253,7 @@ Route::middleware(['auth', EnsureAccountReady::class, EnsureHasWorkspace::class]
         Route::post('projects/{project}/notes', [StudioController::class, 'note'])->whereNumber('project')->name('notes');
         Route::patch('projects/{project}/finalist', [StudioController::class, 'finalist'])->whereNumber('project')->name('finalist');
         Route::post('projects/{project}/retry', [StudioController::class, 'retry'])->whereNumber('project')->name('retry');
+        Route::post('projects/{project}/storyboard/{run}', [StudioController::class, 'storyboard'])->whereNumber(['project', 'run'])->name('storyboard');
         Route::get('projects/{project}/media/{artifact}', [StudioController::class, 'media'])->whereNumber(['project', 'artifact'])->name('media');
         Route::post('projects/{project}/draft', [StudioReleaseController::class, 'draft'])->whereNumber('project')->name('draft');
         Route::get('releases/{post}', [StudioReleaseController::class, 'show'])->whereUuid('post')->name('release');

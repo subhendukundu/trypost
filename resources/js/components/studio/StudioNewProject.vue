@@ -17,18 +17,25 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NativeSelect } from '@/components/ui/native-select';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { store } from '@/routes/app/studio';
 
 const open = defineModel<boolean>('open', { required: true });
-const emit = defineEmits<{ created: [id: number] }>();
+const emit = defineEmits<{ created: [id: number, storyboard: boolean] }>();
 const form = useHttp<
-    { title: string; brief: string; format: Format },
+    {
+        title: string;
+        brief: string;
+        format: Format;
+        review_storyboard: boolean;
+    },
     { project_id: number }
 >({
     title: '',
     brief: '',
     format: 'reel',
+    review_storyboard: false,
 });
 const error = ref('');
 const requestError = computed(
@@ -47,10 +54,12 @@ const submit = async (): Promise<void> => {
     if (form.processing) return;
     error.value = '';
     try {
+        const storyboard = form.review_storyboard;
         const result = await form.post(store.url());
+        if (!result) return;
         open.value = false;
         form.reset();
-        emit('created', result.project_id);
+        emit('created', result.project_id, storyboard);
     } catch {
         if (!Object.keys(form.errors).length)
             error.value = 'Couldn’t queue the project. Try again.';
@@ -106,15 +115,39 @@ const submit = async (): Promise<void> => {
                     </NativeSelect>
                     <InputError :message="form.errors.format" />
                 </div>
+                <div
+                    class="flex items-start justify-between gap-4 rounded-lg border bg-muted/30 p-3"
+                >
+                    <div class="space-y-1">
+                        <Label for="project-storyboard"
+                            >Review the shot plan before rendering</Label
+                        >
+                        <p
+                            id="project-storyboard-description"
+                            class="text-xs text-muted-foreground"
+                        >
+                            Compare two treatments and choose which one to
+                            render.
+                        </p>
+                        <InputError :message="form.errors.review_storyboard" />
+                    </div>
+                    <Switch
+                        id="project-storyboard"
+                        v-model="form.review_storyboard"
+                        aria-describedby="project-storyboard-description"
+                    />
+                </div>
                 <InputError :message="requestError" role="alert" />
 
                 <DialogFooter>
                     <DialogClose as-child>
                         <Button variant="outline" type="button">Cancel</Button>
                     </DialogClose>
-                    <Button type="submit" :loading="form.processing"
-                        >Start production</Button
-                    >
+                    <Button type="submit" :loading="form.processing">{{
+                        form.review_storyboard
+                            ? 'Plan storyboard'
+                            : 'Start production'
+                    }}</Button>
                 </DialogFooter>
             </form>
         </DialogContent>

@@ -100,9 +100,11 @@ const openNewProject = (): void => {
 const openSettings = (): void => {
     settingsOpen.value = true;
 };
-const projectCreated = (id: number): void => {
+const projectCreated = (id: number, storyboard: boolean): void => {
     router.visit(projectUrl(id));
-    toast.success('Production run queued');
+    toast.success(
+        storyboard ? 'Storyboard planning queued' : 'Production run queued',
+    );
 };
 const settingsSaved = (): void => {
     refresh();

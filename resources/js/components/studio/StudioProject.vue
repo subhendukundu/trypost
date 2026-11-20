@@ -25,6 +25,7 @@ import {
 } from '@/components/studio/studio';
 import StudioRuns from '@/components/studio/StudioRuns.vue';
 import StudioStatus from '@/components/studio/StudioStatus.vue';
+import StudioStoryboard from '@/components/studio/StudioStoryboard.vue';
 import StudioTreatments from '@/components/studio/StudioTreatments.vue';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -87,7 +88,13 @@ const retryError = ref('');
 const retrying = ref<number | null>(null);
 const noteSent = ref(false);
 const playbackFailed = ref(false);
-const tab = ref(revisions.value.length ? 'review' : 'runs');
+const tab = ref(
+    props.project.storyboard
+        ? 'storyboard'
+        : revisions.value.length
+          ? 'review'
+          : 'runs',
+);
 const channel = ref(props.channels.length === 1 ? props.channels[0].id : '');
 const noteForm = useHttp({ revision_id: 0, time_seconds: 0, note: '' });
 const noteRequestError = computed(
@@ -129,6 +136,13 @@ const draftForm = useHttp<
 });
 
 watch(
+    () => props.project.storyboard?.fingerprint,
+    (fingerprint) => {
+        if (fingerprint) tab.value = 'storyboard';
+        else if (tab.value === 'storyboard') tab.value = 'runs';
+    },
+);
+watch(
     () => revision.value?.id,
     (next, previous) => {
         playhead.value = 0;
@@ -143,6 +157,12 @@ watch(
         if (next && !previous) tab.value = 'review';
     },
 );
+
+const renderQueued = (): void => {
+    tab.value = 'runs';
+    emit('changed');
+    toast.success('Treatment queued for a private render');
+};
 
 const updatePlayhead = (): void => {
     playhead.value = videoElement.value?.currentTime ?? 0;
@@ -333,10 +353,25 @@ const createDraft = async (): Promise<void> => {
 
         <Tabs v-model="tab" class="gap-4">
             <TabsList variant="line" class="gap-3">
+                <TabsTrigger v-if="project.storyboard" value="storyboard"
+                    >Storyboard</TabsTrigger
+                >
                 <TabsTrigger value="review">Review</TabsTrigger>
                 <TabsTrigger value="treatments">Treatments</TabsTrigger>
                 <TabsTrigger value="runs">Run history</TabsTrigger>
             </TabsList>
+
+            <TabsContent v-if="project.storyboard" value="storyboard">
+                <StudioStoryboard
+                    :key="project.storyboard.fingerprint"
+                    :project-id="project.id"
+                    :storyboard="project.storyboard"
+                    :providers="providers"
+                    :can-create="canCreate"
+                    :busy="!!activeRun"
+                    @rendered="renderQueued"
+                />
+            </TabsContent>
 
             <TabsContent
                 value="review"
