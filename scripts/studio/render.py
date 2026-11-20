@@ -271,8 +271,9 @@ def load_mark(path):
     if path is None or not path.is_file():
         return None
     with Image.open(path) as image:
-        if image.format != 'PNG' or image.width > 4096 or image.height > 4096:
-            raise StudioError('invalid_brand_mark', 'The workspace mark must be a PNG smaller than 4096 pixels in each dimension.')
+        if (image.format not in ('PNG', 'JPEG', 'WEBP') or getattr(image, 'is_animated', False)
+                or image.width > 4096 or image.height > 4096):
+            raise StudioError('invalid_brand_mark', 'Use a still PNG, JPEG or WebP workspace mark no larger than 4096 pixels on either side.')
         mark = image.convert('RGBA')
         mark.thumbnail((108, 108))
         return mark

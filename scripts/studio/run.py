@@ -291,7 +291,7 @@ class Engine:
         alternate = self.model_resolver(alternative_name)
         speaker = self.voice_resolver(self.settings.get('voice_id'))
         context = self.story_context()
-        self.stage('research', ('Planning from the supplied brief and saved publication metrics.' if context['editorial_evidence']
+        self.stage('research', ('Planning from the supplied brief and saved editorial evidence.' if context['editorial_evidence']
                                 else 'Planning from the supplied creative brief. No publication history was available.'))
         self.stage('writing', 'Two writers are taking different perspectives.')
 

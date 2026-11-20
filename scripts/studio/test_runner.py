@@ -8,6 +8,8 @@ from tempfile import TemporaryDirectory
 import unittest
 from zipfile import ZipFile
 
+from PIL import Image
+
 import render
 import run
 from errors import StudioError
@@ -62,6 +64,13 @@ class RunnerTest(unittest.TestCase):
                  'alignment': {'characters': list(text),
                                'character_end_times_seconds': [.7 * (i + 1) / len(text) for i in range(len(text))]}},
                 {'provider': 'OFFLINE TEST ONLY', 'model': 'sine tone, no human speech'})
+
+    def test_native_workspace_jpeg_is_accepted_as_a_brand_mark(self):
+        path = self.root / 'workspace-logo'
+        Image.new('RGB', (216, 108), 'white').save(path, format='JPEG')
+        mark = render.load_mark(path)
+        self.assertEqual(mark.size, (108, 54))
+        self.assertEqual(mark.mode, 'RGBA')
 
     def test_verified_portrait_render_and_exact_source_revision(self):
         render.available()

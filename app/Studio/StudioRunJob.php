@@ -287,6 +287,7 @@ class StudioRunJob implements ShouldQueue
             'provider_outcome_unknown' => __('A provider request ended without confirmation. Studio paused to avoid repeating the request.'),
             'invalid_editorial_output', 'duplicate_treatments' => __('The writer or reviewer delivered an unusable result.'),
             'film_verification_failed', 'shot_verification_failed' => __('The cut failed video, audio or timing verification.'),
+            'invalid_brand_mark' => __('The workspace logo must be a still PNG, JPEG or WebP up to 4096 pixels in either dimension.'),
             'render_not_configured', 'media_tool_failed' => __('The render tools could not complete this cut. Check the Studio worker.'),
             'provider_config_changed', 'run_input_changed' => __('A saved production step uses different provider settings. Restore the original settings before resuming.'),
             'unsupported_revision' => __('This revision can change the visuals and hold timing while preserving the existing voice. Add a new visual note to request another change.'),
